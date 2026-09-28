@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Riset Receive SMS',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0F6E56)),
         useMaterial3: true,
       ),
       home: const SmsInboxPage(),
@@ -63,6 +63,8 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   int _pendingCount = 0;
   List<AllowedSender> _allowedSenders = [];
   SenderAllowlist _allowlist = const SenderAllowlist([]);
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -80,6 +82,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _subscription?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -192,6 +195,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     try {
       final pending = await _store.getUnforwarded();
       for (final entry in pending) {
+        if (!_allowlist.allows(entry.address)) continue;
         final outcome = await _forward.forward(
           baseUrl: _backendUrl,
           entry: entry,
@@ -313,11 +317,41 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   }
 
   Future<void> _clearAll() async {
-    if (_storeReady) {
-      await _store.clearAll();
-    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus semua SMS?'),
+        content: const Text(
+          'Semua SMS di aplikasi ini dihapus. Inbox HP tidak ikut terhapus.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !_storeReady) return;
+    await _store.clearAll();
     if (!mounted) return;
     setState(() => _messages.clear());
+  }
+
+  List<SmsEntry> get _visible {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return _messages;
+    return _messages
+        .where(
+          (entry) =>
+              entry.address.toLowerCase().contains(query) ||
+              entry.body.toLowerCase().contains(query),
+        )
+        .toList();
   }
 
   String _formatTimestamp(int millis) {
@@ -331,19 +365,20 @@ class _SmsInboxPageState extends State<SmsInboxPage>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final visible = _visible;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Riset Receive SMS'),
+        title: const Text('Inbox SMS'),
         actions: [
           IconButton(
             onPressed: _storeReady ? _openSenderSettings : null,
-            icon: const Icon(Icons.filter_alt),
-            tooltip: 'Nomor diizinkan',
+            icon: const Icon(Icons.tune),
+            tooltip: 'Pengaturan',
           ),
           IconButton(
             onPressed: _messages.isEmpty ? null : _clearAll,
-            icon: const Icon(Icons.delete_sweep),
+            icon: const Icon(Icons.delete_sweep_outlined),
             tooltip: 'Bersihkan semua',
           ),
         ],
@@ -351,101 +386,271 @@ class _SmsInboxPageState extends State<SmsInboxPage>
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _status,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_messages.length} SMS tersimpan',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    Text(
-                      _allowedSenders.isEmpty
-                          ? 'Filter: semua nomor dibaca'
-                          : 'Filter: ${_allowedSenders.length} nomor diizinkan',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
-                    if (_pendingCount > 0)
-                      Text(
-                        '$_pendingCount SMS menunggu kirim ke backend',
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: _granted ? null : _requestPermission,
-                          icon: const Icon(Icons.sms),
-                          label: const Text('Minta Izin SMS'),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: _StatusCard(
+              granted: _granted,
+              canRequest: _canRequest,
+              status: _status,
+              count: _messages.length,
+              filterLabel: _allowedSenders.isEmpty
+                  ? 'Semua nomor'
+                  : '${_allowedSenders.length} nomor',
+              pending: _pendingCount,
+              syncing: _syncing,
+              forwarding: _forwarding,
+              backendReady: _backendUrl.trim().isNotEmpty,
+              onRequest: _requestPermission,
+              onOpenSettings: _openSettings,
+            ),
+          ),
+          if (_messages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _query = value),
+                decoration: InputDecoration(
+                  hintText: 'Cari nomor atau isi SMS',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Hapus pencarian',
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                          icon: const Icon(Icons.close),
                         ),
-                        if (_granted || !_canRequest)
-                          OutlinedButton.icon(
-                            onPressed: _openSettings,
-                            icon: const Icon(Icons.settings),
-                            label: const Text('Pengaturan'),
-                          ),
-                      ],
-                    ),
-                  ],
+                  isDense: true,
+                  filled: true,
+                  fillColor: scheme.surfaceContainerHighest,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
-          ),
           Expanded(
-            child: _messages.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Belum ada SMS masuk.\nKirim SMS ke perangkat ini untuk mencoba.',
-                      textAlign: TextAlign.center,
-                    ),
-                  )
+            child: visible.isEmpty
+                ? _EmptyInbox(filtered: _query.trim().isNotEmpty)
                 : ListView.separated(
-                    itemCount: _messages.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    itemCount: visible.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      final entry = _messages[index];
+                      final entry = visible[index];
                       return Dismissible(
-                        key: ValueKey<int>(
-                          entry.id ?? entry.timestamp,
-                        ),
+                        key: ValueKey<int>(entry.id ?? entry.timestamp),
                         direction: DismissDirection.endToStart,
                         background: Container(
-                          color: Colors.red.shade100,
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Icon(Icons.delete, color: Colors.red.shade700),
+                          decoration: BoxDecoration(
+                            color: scheme.errorContainer,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(Icons.delete, color: scheme.onErrorContainer),
                         ),
                         onDismissed: (_) => _deleteEntry(entry),
-                        child: ListTile(
-                          leading: const CircleAvatar(
-                            child: Icon(Icons.message),
-                          ),
-                          title: Text(
-                            entry.address.isEmpty
-                                ? 'Nomor tidak diketahui'
-                                : entry.address,
-                          ),
-                          subtitle: Text(entry.body),
-                          trailing: Text(
-                            _formatTimestamp(entry.timestamp),
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
+                        child: _SmsTile(
+                          entry: entry,
+                          time: _formatTimestamp(entry.timestamp),
                         ),
                       );
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  const _StatusCard({
+    required this.granted,
+    required this.canRequest,
+    required this.status,
+    required this.count,
+    required this.filterLabel,
+    required this.pending,
+    required this.syncing,
+    required this.forwarding,
+    required this.backendReady,
+    required this.onRequest,
+    required this.onOpenSettings,
+  });
+
+  final bool granted;
+  final bool canRequest;
+  final String status;
+  final int count;
+  final String filterLabel;
+  final int pending;
+  final bool syncing;
+  final bool forwarding;
+  final bool backendReady;
+  final VoidCallback onRequest;
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final busy = syncing || forwarding;
+    return Card(
+      elevation: 0,
+      color: scheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  granted ? Icons.check_circle : Icons.sms_outlined,
+                  color: granted ? scheme.primary : scheme.error,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(status, style: Theme.of(context).textTheme.titleSmall),
+                ),
+                if (busy)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _Chip(icon: Icons.inbox_outlined, label: '$count tersimpan'),
+                _Chip(icon: Icons.filter_alt_outlined, label: filterLabel),
+                _Chip(
+                  icon: backendReady ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                  label: backendReady ? 'Backend siap' : 'Backend kosong',
+                ),
+                if (pending > 0)
+                  _Chip(icon: Icons.schedule, label: '$pending antre'),
+              ],
+            ),
+            if (!granted) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: canRequest ? onRequest : null,
+                    icon: const Icon(Icons.sms),
+                    label: const Text('Minta Izin SMS'),
+                  ),
+                  if (!canRequest)
+                    OutlinedButton.icon(
+                      onPressed: onOpenSettings,
+                      icon: const Icon(Icons.settings),
+                      label: const Text('Buka pengaturan'),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      visualDensity: VisualDensity.compact,
+      avatar: Icon(icon, size: 16),
+      label: Text(label),
+    );
+  }
+}
+
+class _SmsTile extends StatelessWidget {
+  const _SmsTile({required this.entry, required this.time});
+
+  final SmsEntry entry;
+  final String time;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sent = entry.forwarded;
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    entry.address.isEmpty ? 'Nomor tidak diketahui' : entry.address,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Icon(
+                  sent ? Icons.cloud_done : Icons.cloud_upload_outlined,
+                  size: 16,
+                  color: sent ? scheme.primary : scheme.outline,
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(entry.body),
+            const SizedBox(height: 8),
+            Text(
+              time,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyInbox extends StatelessWidget {
+  const _EmptyInbox({required this.filtered});
+
+  final bool filtered;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(
+          filtered
+              ? 'Tidak ada SMS yang cocok.'
+              : 'Belum ada SMS masuk.\nGeser SMS ke kiri untuk menghapus.',
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

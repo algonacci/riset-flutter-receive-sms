@@ -142,25 +142,26 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Pengaturan'),
-      ),
+      appBar: AppBar(title: const Text('Pengaturan')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text('Backend', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
           Text(
-            'Backend',
-            style: Theme.of(context).textTheme.titleMedium,
+            'Pakai IP laptop di Wi-Fi yang sama, bukan 0.0.0.0.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           TextField(
             controller: _urlController,
             keyboardType: TextInputType.url,
             decoration: const InputDecoration(
               labelText: 'URL backend',
               hintText: 'http://192.168.1.5:5000',
+              prefixIcon: Icon(Icons.link),
               border: OutlineInputBorder(),
             ),
           ),
@@ -168,8 +169,9 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
           TextField(
             controller: _gatewayController,
             decoration: const InputDecoration(
-              labelText: 'Gateway ID (opsional)',
+              labelText: 'Gateway ID',
               hintText: 'hp-01',
+              prefixIcon: Icon(Icons.phone_android),
               border: OutlineInputBorder(),
             ),
           ),
@@ -180,8 +182,9 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
             enableSuggestions: false,
             autocorrect: false,
             decoration: const InputDecoration(
-              labelText: 'API key (opsional)',
-              hintText: 'isi kalo backend pakai SMS_API_KEY',
+              labelText: 'API key',
+              hintText: 'kosongkan kalau backend tanpa kunci',
+              prefixIcon: Icon(Icons.key_outlined),
               border: OutlineInputBorder(),
             ),
           ),
@@ -190,30 +193,30 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
             children: [
               FilledButton.icon(
                 onPressed: _saveBackend,
-                icon: const Icon(Icons.save),
+                icon: const Icon(Icons.save_outlined),
                 label: const Text('Simpan'),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: _testConnection,
-                icon: const Icon(Icons.wifi),
+                icon: const Icon(Icons.wifi_tethering),
                 label: const Text('Tes koneksi'),
               ),
             ],
           ),
-          const Divider(height: 32),
+          const SizedBox(height: 28),
           Text(
-            'Nomor pengirim yang diizinkan',
+            'Nomor diizinkan',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
-            'Cuma SMS dari nomor di daftar ini yang disimpan '
-            'dan diteruskan ke backend.\n\n'
-            'Daftar kosong = semua nomor dibaca.',
-            style: Theme.of(context).textTheme.bodyMedium,
+            _senders.isEmpty
+                ? 'Daftar kosong: semua SMS disimpan dan dikirim.'
+                : 'Hanya ${_senders.length} nomor ini yang disimpan dan dikirim.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -223,7 +226,8 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
                   keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
                     labelText: 'Nomor HP',
-                    hintText: '0812xxxx / 62812xxxx',
+                    hintText: '0812 atau 62812',
+                    prefixIcon: const Icon(Icons.phone_outlined),
                     errorText: _error,
                     border: const OutlineInputBorder(),
                   ),
@@ -231,34 +235,46 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(
+              FilledButton.tonal(
                 onPressed: _add,
                 child: const Text('Tambah'),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           if (_senders.isEmpty)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('Belum ada nomor → semua SMS dibaca.'),
+            Card(
+              elevation: 0,
+              color: scheme.surfaceContainerLow,
+              child: const ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('Belum ada filter nomor'),
               ),
             )
           else
             Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: scheme.outlineVariant),
+              ),
               child: Column(
                 children: [
-                  for (final sender in _senders)
+                  for (var i = 0; i < _senders.length; i++) ...[
+                    if (i > 0) const Divider(height: 1),
                     ListTile(
-                      leading: const Icon(Icons.phone),
-                      title: Text(sender.number),
+                      leading: CircleAvatar(
+                        backgroundColor: scheme.secondaryContainer,
+                        child: const Icon(Icons.phone, size: 18),
+                      ),
+                      title: Text(_senders[i].number),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline),
                         tooltip: 'Hapus',
-                        onPressed: () => _remove(sender),
+                        onPressed: () => _remove(_senders[i]),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
