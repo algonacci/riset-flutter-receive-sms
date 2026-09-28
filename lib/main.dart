@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:receive_sms/receive_sms.dart';
 
 void main() {
   runApp(const MyApp());
@@ -7,115 +10,182 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Riset Receive SMS',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const SmsInboxPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class SmsInboxPage extends StatefulWidget {
+  const SmsInboxPage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<SmsInboxPage> createState() => _SmsInboxPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _SmsInboxPageState extends State<SmsInboxPage> {
+  final ReceiveSms _receiveSms = ReceiveSms();
+  final List<SmsMessage> _messages = [];
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  StreamSubscription<SmsMessage>? _subscription;
+  String _status = 'Belum ada izin SMS';
+  bool _granted = false;
+  bool _canRequest = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = _receiveSms.incomingSmsStream.listen(
+      (message) {
+        if (!mounted) return;
+        setState(() => _messages.insert(0, message));
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() => _status = 'Stream error: $error');
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _requestPermission() async {
+    try {
+      final result = await _receiveSms.requestPermission();
+      if (!mounted) return;
+      setState(() {
+        _granted = result.granted;
+        _canRequest = result.canRequest;
+        if (result.granted) {
+          _status = 'Izin SMS diberikan, menunggu SMS masuk...';
+        } else if (result.canRequest) {
+          _status = 'Izin SMS ditolak';
+        } else {
+          _status = 'Izin SMS ditolak permanen';
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Gagal meminta izin: $e');
+    }
+  }
+
+  Future<void> _openSettings() async {
+    try {
+      await _receiveSms.openAppSettings();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Gagal membuka pengaturan: $e');
+    }
+  }
+
+  String _formatTimestamp(String raw) {
+    if (raw.isEmpty) return '-';
+    final millis = int.tryParse(raw);
+    if (millis == null) return raw;
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis).toLocal();
+    return '${dt.day.toString().padLeft(2, '0')}-'
+        '${dt.month.toString().padLeft(2, '0')}-'
+        '${dt.year} ${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Riset Receive SMS'),
+        actions: [
+          IconButton(
+            onPressed: _messages.isEmpty
+                ? null
+                : () => setState(() => _messages.clear()),
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: 'Bersihkan',
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _status,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _granted ? null : _requestPermission,
+                          icon: const Icon(Icons.sms),
+                          label: const Text('Minta Izin SMS'),
+                        ),
+                        if (_granted || !_canRequest)
+                          OutlinedButton.icon(
+                            onPressed: _openSettings,
+                            icon: const Icon(Icons.settings),
+                            label: const Text('Pengaturan'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+          ),
+          Expanded(
+            child: _messages.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Belum ada SMS masuk.\nKirim SMS ke perangkat ini untuk mencoba.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _messages.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      return ListTile(
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.message),
+                        ),
+                        title: Text(
+                          message.address.isEmpty
+                              ? 'Nomor tidak diketahui'
+                              : message.address,
+                        ),
+                        subtitle: Text(message.body),
+                        trailing: Text(
+                          _formatTimestamp(message.timestamp),
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
