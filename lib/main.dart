@@ -344,14 +344,12 @@ class _SmsInboxPageState extends State<SmsInboxPage>
 
   List<SmsEntry> get _visible {
     final query = _query.trim().toLowerCase();
-    if (query.isEmpty) return _messages;
-    return _messages
-        .where(
-          (entry) =>
-              entry.address.toLowerCase().contains(query) ||
-              entry.body.toLowerCase().contains(query),
-        )
-        .toList();
+    return _messages.where((entry) {
+      if (!_allowlist.allows(entry.address)) return false;
+      if (query.isEmpty) return true;
+      return entry.address.toLowerCase().contains(query) ||
+          entry.body.toLowerCase().contains(query);
+    }).toList();
   }
 
   String _formatTimestamp(int millis) {
@@ -391,7 +389,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
               granted: _granted,
               canRequest: _canRequest,
               status: _status,
-              count: _messages.length,
+              count: visible.length,
               filterLabel: _allowedSenders.isEmpty
                   ? 'Semua nomor'
                   : '${_allowedSenders.length} nomor',
