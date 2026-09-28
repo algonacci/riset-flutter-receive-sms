@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../models/allowed_sender.dart';
 import '../models/sms_entry.dart';
 
 class SmsStore {
@@ -20,12 +21,21 @@ CREATE TABLE IF NOT EXISTS sms_entries (
 )
 ''';
 
+  static const String _createSendersSql = '''
+CREATE TABLE IF NOT EXISTS allowed_senders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  number TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+)
+''';
+
   Future<Database> init() async {
     final existing = _db;
     if (existing != null && existing.isOpen) return existing;
     final path = _dbPath ?? p.join(await getDatabasesPath(), 'sms.db');
     final db = await openDatabase(path, version: 1);
     await db.execute(createTableSql);
+    await db.execute(_createSendersSql);
     _db = db;
     return db;
   }
@@ -96,6 +106,43 @@ CREATE TABLE IF NOT EXISTS sms_entries (
   Future<int> count() async {
     final rows = await _requireDb().rawQuery('SELECT COUNT(*) AS n FROM sms_entries');
     return (rows.first['n'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<List<AllowedSender>> getAllowedSenders() async {
+    final rows = await _requireDb().query(
+      'allowed_senders',
+      orderBy: 'number ASC',
+    );
+    return rows.map(AllowedSender.fromMap).toList();
+  }
+
+  Future<bool> containsAllowedSender(String normalizedNumber) async {
+    final rows = await _requireDb().query(
+      'allowed_senders',
+      where: 'number = ?',
+      whereArgs: [normalizedNumber],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<void> addAllowedSender(String normalizedNumber) async {
+    await _requireDb().insert(
+      'allowed_senders',
+      {
+        'number': normalizedNumber,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> removeAllowedSender(int id) {
+    return _requireDb().delete(
+      'allowed_senders',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> close() async {

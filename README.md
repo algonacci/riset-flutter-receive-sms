@@ -22,6 +22,17 @@ App menangkap SMS-nya, menyimpan ke SQLite, dan (nanti) meneruskan ke backend.
 Izin (`READ_SMS` + `RECEIVE_SMS`) diminta sekali; setelah granted, app selanjutnya
 langsung cek status senyap tanpa dialog.
 
+## Filter nomor pengirim
+
+Buka menu **filter** (ikon di AppBar kanan) untuk atur nomor yang boleh diproses
+(misal nomor SIM di modem GSM SIM9600):
+
+- Cuma SMS dari nomor terdaftar yang disimpan → otomatis juga yang diteruskan
+  ke backend nanti
+- Daftar **kosong = semua nomor dibaca** (perilaku default buat testing)
+- Nomor dinormalisasi dulu: `0812…` = `+62812…` = `62812…` = `812…`
+- Match **exact** setelah normalisasi — nomor lain yang mirip tidak ikut kebaca
+
 ## Menyimpan
 
 - DB: `sms.db`, tabel `sms_entries`

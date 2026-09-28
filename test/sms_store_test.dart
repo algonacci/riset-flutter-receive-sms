@@ -101,4 +101,39 @@ void main() {
     final fresh = SmsStore(dbPath: inMemoryDatabasePath);
     expect(() => fresh.count(), throwsA(isA<StateError>()));
   });
+
+  group('allowed_senders', () {
+    test('tambah, cek, dan list nomor diizinkan', () async {
+      expect(await store.getAllowedSenders(), isEmpty);
+
+      await store.addAllowedSender('628111111111');
+      await store.addAllowedSender('628222222222');
+
+      final senders = await store.getAllowedSenders();
+      expect(senders, hasLength(2));
+      expect(senders.first.number, '628111111111');
+      expect(await store.containsAllowedSender('628111111111'), isTrue);
+      expect(await store.containsAllowedSender('628999999999'), isFalse);
+    });
+
+    test('nomor ganda tidak ditambahkan dua kali', () async {
+      await store.addAllowedSender('628111111111');
+      await store.addAllowedSender('628111111111');
+
+      expect(await store.getAllowedSenders(), hasLength(1));
+    });
+
+    test('removeAllowedSender menghapus per id', () async {
+      await store.addAllowedSender('628111111111');
+      await store.addAllowedSender('628222222222');
+
+      final target = (await store.getAllowedSenders())
+          .firstWhere((sender) => sender.number == '628111111111');
+      await store.removeAllowedSender(target.id!);
+
+      final remaining = await store.getAllowedSenders();
+      expect(remaining, hasLength(1));
+      expect(remaining.single.number, '628222222222');
+    });
+  });
 }

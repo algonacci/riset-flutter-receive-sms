@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:receive_sms/receive_sms.dart';
 
 import 'data/sms_store.dart';
+import 'models/allowed_sender.dart';
 import 'models/sms_entry.dart';
+import 'pages/sender_settings_page.dart';
 import 'services/inbox_syncer.dart';
 import 'services/permission_service.dart';
+import 'services/sender_allowlist.dart';
 
 void main() {
   runApp(const MyApp());
@@ -51,6 +54,8 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   bool _canRequest = true;
   bool _storeReady = false;
   bool _syncing = false;
+  List<AllowedSender> _allowedSenders = [];
+  SenderAllowlist _allowlist = const SenderAllowlist([]);
 
   @override
   void initState() {
@@ -92,6 +97,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   Future<void> _start() async {
     await _storeFuture;
     if (!_storeReady) return;
+    await _reloadAllowlist();
     await _reload();
 
     final status = await _permission.check();
@@ -115,6 +121,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   Future<void> _onIncomingSms(SmsMessage message) async {
     await _storeFuture;
     if (!_storeReady || !mounted) return;
+    if (!_allowlist.allows(message.address)) return;
     final now = DateTime.now().millisecondsSinceEpoch;
     final timestamp = int.tryParse(message.timestamp) ?? now;
     await _store.insert(SmsEntry(
@@ -131,6 +138,18 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     setState(() => _status = 'Stream error: $error');
   }
 
+  Future<void> _reloadAllowlist() async {
+    if (!_storeReady) return;
+    final senders = await _store.getAllowedSenders();
+    if (!mounted) return;
+    setState(() {
+      _allowedSenders = senders;
+      _allowlist = SenderAllowlist(
+        senders.map((sender) => sender.number).toList(),
+      );
+    });
+  }
+
   Future<void> _reload() async {
     if (!_storeReady) return;
     final messages = await _store.getAll();
@@ -142,7 +161,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     if (!_storeReady || _syncing) return;
     _syncing = true;
     try {
-      await _syncer.sync(_store);
+      await _syncer.sync(_store, allowlist: _allowlist);
     } catch (e) {
       if (mounted) {
         setState(() => _status = 'Sinkron inbox gagal: $e');
@@ -184,6 +203,16 @@ class _SmsInboxPageState extends State<SmsInboxPage>
       if (!mounted) return;
       setState(() => _status = 'Gagal membuka pengaturan: $e');
     }
+  }
+
+  Future<void> _openSenderSettings() async {
+    if (!_storeReady) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SenderSettingsPage(store: _store),
+      ),
+    );
+    await _reloadAllowlist();
   }
 
   Future<void> _deleteEntry(SmsEntry entry) async {
@@ -244,6 +273,11 @@ class _SmsInboxPageState extends State<SmsInboxPage>
         title: const Text('Riset Receive SMS'),
         actions: [
           IconButton(
+            onPressed: _storeReady ? _openSenderSettings : null,
+            icon: const Icon(Icons.filter_alt),
+            tooltip: 'Nomor diizinkan',
+          ),
+          IconButton(
             onPressed: _messages.isEmpty ? null : _clearAll,
             icon: const Icon(Icons.delete_sweep),
             tooltip: 'Bersihkan semua',
@@ -267,6 +301,12 @@ class _SmsInboxPageState extends State<SmsInboxPage>
                     const SizedBox(height: 4),
                     Text(
                       '${_messages.length} SMS tersimpan',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    Text(
+                      _allowedSenders.isEmpty
+                          ? 'Filter: semua nomor dibaca'
+                          : 'Filter: ${_allowedSenders.length} nomor diizinkan',
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 12),
