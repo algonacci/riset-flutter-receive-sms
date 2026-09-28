@@ -7,6 +7,7 @@ import 'data/sms_store.dart';
 import 'models/allowed_sender.dart';
 import 'models/sms_entry.dart';
 import 'pages/sender_settings_page.dart';
+import 'services/forward_service.dart';
 import 'services/inbox_syncer.dart';
 import 'services/permission_service.dart';
 import 'services/sender_allowlist.dart';
@@ -44,6 +45,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   final SmsStore _store = SmsStore();
   final InboxSyncer _syncer = InboxSyncer();
   final PermissionService _permission = PermissionService();
+  final ForwardService _forward = ForwardService();
   List<SmsEntry> _messages = [];
 
   late final Future<void> _storeFuture;
@@ -54,6 +56,10 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   bool _canRequest = true;
   bool _storeReady = false;
   bool _syncing = false;
+  bool _forwarding = false;
+  String _backendUrl = '';
+  String _gatewayId = '';
+  int _pendingCount = 0;
   List<AllowedSender> _allowedSenders = [];
   SenderAllowlist _allowlist = const SenderAllowlist([]);
 
@@ -80,6 +86,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _granted) {
       _syncAndReload();
+      _forwardPending();
     }
   }
 
@@ -98,6 +105,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     await _storeFuture;
     if (!_storeReady) return;
     await _reloadAllowlist();
+    await _loadBackendSettings();
     await _reload();
 
     final status = await _permission.check();
@@ -116,6 +124,18 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     if (status.granted) {
       await _syncAndReload();
     }
+    await _forwardPending();
+  }
+
+  Future<void> _loadBackendSettings() async {
+    if (!_storeReady) return;
+    final url = await _store.getSetting('backend_url');
+    final gatewayId = await _store.getSetting('gateway_id');
+    if (!mounted) return;
+    setState(() {
+      _backendUrl = url ?? '';
+      _gatewayId = gatewayId ?? '';
+    });
   }
 
   Future<void> _onIncomingSms(SmsMessage message) async {
@@ -131,6 +151,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
       receivedAt: now,
     ));
     await _reload();
+    await _forwardPending();
   }
 
   void _onStreamError(Object error) {
@@ -153,8 +174,39 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   Future<void> _reload() async {
     if (!_storeReady) return;
     final messages = await _store.getAll();
+    final pending = await _store.countUnforwarded();
     if (!mounted) return;
-    setState(() => _messages = messages);
+    setState(() {
+      _messages = messages;
+      _pendingCount = pending;
+    });
+  }
+
+  Future<void> _forwardPending() async {
+    if (!_storeReady || _forwarding) return;
+    if (_backendUrl.trim().isEmpty) return;
+    _forwarding = true;
+    try {
+      final pending = await _store.getUnforwarded();
+      for (final entry in pending) {
+        final outcome = await _forward.forward(
+          baseUrl: _backendUrl,
+          entry: entry,
+          gatewayId: _gatewayId,
+        );
+        if (outcome == ForwardOutcome.saved) {
+          await _store.markForwarded(entry.id!);
+          continue;
+        }
+        if (outcome == ForwardOutcome.rejected) {
+          continue;
+        }
+        break; // server gagal — coba lagi nanti
+      }
+    } finally {
+      _forwarding = false;
+    }
+    await _reload();
   }
 
   Future<void> _syncAndReload() async {
@@ -170,6 +222,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
       _syncing = false;
     }
     await _reload();
+    await _forwardPending();
   }
 
   Future<void> _requestPermission() async {
@@ -209,10 +262,13 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     if (!_storeReady) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SenderSettingsPage(store: _store),
+        builder: (_) => SenderSettingsPage(store: _store, forward: _forward),
       ),
     );
     await _reloadAllowlist();
+    await _loadBackendSettings();
+    await _reload();
+    await _forwardPending();
   }
 
   Future<void> _deleteEntry(SmsEntry entry) async {
@@ -309,6 +365,11 @@ class _SmsInboxPageState extends State<SmsInboxPage>
                           : 'Filter: ${_allowedSenders.length} nomor diizinkan',
                       style: Theme.of(context).textTheme.labelLarge,
                     ),
+                    if (_pendingCount > 0)
+                      Text(
+                        '$_pendingCount SMS menunggu kirim ke backend',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,

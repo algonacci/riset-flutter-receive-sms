@@ -136,4 +136,45 @@ void main() {
       expect(remaining.single.number, '628222222222');
     });
   });
+
+  group('antrian forward', () {
+    test('SMS baru pending, urut timestamp ASC, markForwarded mengurangi', () async {
+      await store.insert(entry(timestamp: 200, body: 'kedua'));
+      await store.insert(entry(timestamp: 100, body: 'pertama'));
+
+      expect(await store.countUnforwarded(), 2);
+
+      final pending = await store.getUnforwarded();
+      expect(pending.map((e) => e.timestamp), [100, 200]);
+
+      await store.markForwarded(pending.first.id!);
+
+      expect(await store.countUnforwarded(), 1);
+      expect((await store.getUnforwarded()).single.timestamp, 200);
+    });
+
+    test('insert yang di-ignore (duplikat) tidak menambah antrian', () async {
+      await store.insert(entry(timestamp: 100));
+      await store.markForwarded(
+        (await store.getUnforwarded()).single.id!,
+      );
+
+      await store.insert(entry(timestamp: 100));
+
+      expect(await store.countUnforwarded(), 0);
+    });
+  });
+
+  group('app_settings', () {
+    test('get null saat belum diisi, set dan timpa jalan', () async {
+      expect(await store.getSetting('backend_url'), isNull);
+
+      await store.setSetting('backend_url', 'http://192.168.1.5:5000');
+      expect(await store.getSetting('backend_url'), 'http://192.168.1.5:5000');
+
+      await store.setSetting('backend_url', 'http://10.0.2.2:5000');
+      expect(await store.getSetting('backend_url'), 'http://10.0.2.2:5000');
+      expect(await store.getSetting('gateway_id'), isNull);
+    });
+  });
 }

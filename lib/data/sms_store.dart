@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS sms_entries (
   body TEXT NOT NULL,
   timestamp INTEGER NOT NULL,
   received_at INTEGER NOT NULL,
+  forwarded INTEGER NOT NULL DEFAULT 0,
   UNIQUE(address, body, timestamp)
 )
 ''';
@@ -29,6 +30,13 @@ CREATE TABLE IF NOT EXISTS allowed_senders (
 )
 ''';
 
+  static const String _createSettingsSql = '''
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+)
+''';
+
   Future<Database> init() async {
     final existing = _db;
     if (existing != null && existing.isOpen) return existing;
@@ -36,8 +44,19 @@ CREATE TABLE IF NOT EXISTS allowed_senders (
     final db = await openDatabase(path, version: 1);
     await db.execute(createTableSql);
     await db.execute(_createSendersSql);
+    await db.execute(_createSettingsSql);
+    await _ensureColumns(db);
     _db = db;
     return db;
+  }
+
+  Future<void> _ensureColumns(Database db) async {
+    final info = await db.rawQuery('PRAGMA table_info(sms_entries)');
+    if (!info.any((row) => row['name'] == 'forwarded')) {
+      await db.execute(
+        'ALTER TABLE sms_entries ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   bool get isReady {
@@ -142,6 +161,50 @@ CREATE TABLE IF NOT EXISTS allowed_senders (
       'allowed_senders',
       where: 'id = ?',
       whereArgs: [id],
+    );
+  }
+
+  Future<List<SmsEntry>> getUnforwarded() async {
+    final rows = await _requireDb().query(
+      'sms_entries',
+      where: 'forwarded = 0',
+      orderBy: 'timestamp ASC, id ASC',
+    );
+    return rows.map(SmsEntry.fromMap).toList();
+  }
+
+  Future<void> markForwarded(int id) async {
+    await _requireDb().update(
+      'sms_entries',
+      {'forwarded': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> countUnforwarded() async {
+    final rows = await _requireDb().rawQuery(
+      'SELECT COUNT(*) AS n FROM sms_entries WHERE forwarded = 0',
+    );
+    return (rows.first['n'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<String?> getSetting(String key) async {
+    final rows = await _requireDb().query(
+      'app_settings',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String?;
+  }
+
+  Future<void> setSetting(String key, String value) async {
+    await _requireDb().insert(
+      'app_settings',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 

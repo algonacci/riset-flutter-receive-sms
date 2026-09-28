@@ -4,6 +4,7 @@ class SmsEntry {
   final String body;
   final int timestamp;
   final int receivedAt;
+  final bool forwarded;
 
   const SmsEntry({
     this.id,
@@ -11,6 +12,7 @@ class SmsEntry {
     required this.body,
     required this.timestamp,
     required this.receivedAt,
+    this.forwarded = false,
   });
 
   factory SmsEntry.fromMap(Map<String, Object?> map) {
@@ -20,6 +22,7 @@ class SmsEntry {
       body: map['body'] as String? ?? '',
       timestamp: (map['timestamp'] as num?)?.toInt() ?? 0,
       receivedAt: (map['received_at'] as num?)?.toInt() ?? 0,
+      forwarded: ((map['forwarded'] as num?)?.toInt() ?? 0) != 0,
     );
   }
 
@@ -30,6 +33,7 @@ class SmsEntry {
       'body': body,
       'timestamp': timestamp,
       'received_at': receivedAt,
+      'forwarded': forwarded ? 1 : 0,
     };
   }
 }

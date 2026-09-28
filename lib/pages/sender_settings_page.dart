@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../data/sms_store.dart';
 import '../models/allowed_sender.dart';
+import '../services/forward_service.dart';
 import '../services/sender_allowlist.dart';
 
 class SenderSettingsPage extends StatefulWidget {
-  const SenderSettingsPage({super.key, required this.store});
+  const SenderSettingsPage({
+    super.key,
+    required this.store,
+    required this.forward,
+  });
 
   final SmsStore store;
+  final ForwardService forward;
 
   @override
   State<SenderSettingsPage> createState() => _SenderSettingsPageState();
@@ -15,6 +21,8 @@ class SenderSettingsPage extends StatefulWidget {
 
 class _SenderSettingsPageState extends State<SenderSettingsPage> {
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _urlController = TextEditingController();
+  final TextEditingController _gatewayController = TextEditingController();
   List<AllowedSender> _senders = [];
   String? _error;
 
@@ -27,13 +35,21 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _urlController.dispose();
+    _gatewayController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final senders = await widget.store.getAllowedSenders();
+    final url = await widget.store.getSetting('backend_url');
+    final gatewayId = await widget.store.getSetting('gateway_id');
     if (!mounted) return;
-    setState(() => _senders = senders);
+    setState(() {
+      _senders = senders;
+      _urlController.text = url ?? '';
+      _gatewayController.text = gatewayId ?? '';
+    });
   }
 
   Future<void> _add() async {
@@ -60,19 +76,117 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
     await _load();
   }
 
+  Future<void> _saveBackend() async {
+    final url = _urlController.text.trim();
+    if (url.isNotEmpty) {
+      final uri = Uri.tryParse(url);
+      if (uri == null || !uri.hasScheme) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('URL tidak valid — contoh: http://192.168.1.5:5000'),
+          ),
+        );
+        return;
+      }
+      if (uri.host == '0.0.0.0') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '0.0.0.0 bukan alamat tujuan dari HP — pakai IP laptop '
+              'di Wi-Fi yang sama, mis. http://192.168.1.5:5000',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+    await widget.store.setSetting(
+      'backend_url',
+      url,
+    );
+    await widget.store.setSetting(
+      'gateway_id',
+      _gatewayController.text.trim(),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Pengaturan backend disimpan')),
+    );
+  }
+
+  Future<void> _testConnection() async {
+    final url = _urlController.text.trim();
+    final ok = await widget.forward.testConnection(url);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Terhubung ke backend ✓'
+              : 'Gagal terhubung. Cek URL dan pastikan backend jalan.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Nomor Diizinkan'),
+        title: const Text('Pengaturan'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Cuma SMS dari nomor di daftar ini yang diproses (disimpan '
-            'dan diteruskan ke backend).\n\n'
+            'Backend',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _urlController,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'URL backend',
+              hintText: 'http://192.168.1.5:5000',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _gatewayController,
+            decoration: const InputDecoration(
+              labelText: 'Gateway ID (opsional)',
+              hintText: 'hp-01',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              FilledButton.icon(
+                onPressed: _saveBackend,
+                icon: const Icon(Icons.save),
+                label: const Text('Simpan'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _testConnection,
+                icon: const Icon(Icons.wifi),
+                label: const Text('Tes koneksi'),
+              ),
+            ],
+          ),
+          const Divider(height: 32),
+          Text(
+            'Nomor pengirim yang diizinkan',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Cuma SMS dari nomor di daftar ini yang disimpan '
+            'dan diteruskan ke backend.\n\n'
             'Daftar kosong = semua nomor dibaca.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),

@@ -33,6 +33,27 @@ Buka menu **filter** (ikon di AppBar kanan) untuk atur nomor yang boleh diproses
 - Nomor dinormalisasi dulu: `0812…` = `+62812…` = `62812…` = `812…`
 - Match **exact** setelah normalisasi — nomor lain yang mirip tidak ikut kebaca
 
+## Terus ke backend
+
+Isi **URL backend** di halaman Pengaturan (ikon filter) → `http://<ip-laptop>:5000`
+(jalankan backend: `uv run app.py` di repo `riset-backend-receive-sms`).
+
+- Tiap SMS baru (lolos filter nomor) di-POST ke `POST /api/sms`
+- **Antrian lokal**: kolom `forwarded` — kalau backend lagi mati, SMS nunggu di
+  DB dan dikirim ulang otomatis saat ada pemicu berikutnya (SMS masuk / app
+  dibuka lagi). Status card nunjukkin jumlah yang menunggu
+- Tombol **Tes koneksi** di Pengaturan mengecek `GET /api/health`
+- Backend menyimpan ke `sms_log.txt` (JSON Lines) — sementara, bisa diganti DB
+
+Catatan jaringan:
+
+- Backend listen `0.0.0.0` supaya bisa diakses dari Wi-Fi yang sama — itu alamat
+  **listen**, bukan tujuan. Di app **jangan** isi `0.0.0.0` (HP akan nembak ke
+  HP-nya sendiri), isi IP laptop. Guard otomatis nolak input `0.0.0.0`
+- CORS tidak berpengaruh buat Flutter mobile (cuma browser yang enforce)
+- Kalau backend di Wi-Fi publik, set env `SMS_API_KEY` lalu isi `X-Api-Key` —
+  sekarang app belum ngirim header itu, jadi pakai LAN pribadi dulu
+
 ## Menyimpan
 
 - DB: `sms.db`, tabel `sms_entries`
