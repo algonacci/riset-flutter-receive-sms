@@ -26,6 +26,7 @@ class ForwardService {
     required String baseUrl,
     required SmsEntry entry,
     String gatewayId = '',
+    String apiKey = '',
   }) async {
     final uri = _endpoint(baseUrl, '/api/sms');
     if (uri == null) return ForwardOutcome.failed;
@@ -33,7 +34,10 @@ class ForwardService {
       final response = await _client
           .post(
             uri,
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              if (apiKey.isNotEmpty) 'X-Api-Key': apiKey,
+            },
             body: jsonEncode({
               'sender': entry.address,
               'message': entry.body,
@@ -54,11 +58,13 @@ class ForwardService {
     }
   }
 
-  Future<bool> testConnection(String baseUrl) async {
+  Future<bool> testConnection(String baseUrl, {String apiKey = ''}) async {
     final uri = _endpoint(baseUrl, '/api/health');
     if (uri == null) return false;
     try {
-      final response = await _client.get(uri).timeout(_timeout);
+      final response = await _client
+          .get(uri, headers: {if (apiKey.isNotEmpty) 'X-Api-Key': apiKey})
+          .timeout(_timeout);
       return response.statusCode == 200;
     } catch (_) {
       return false;

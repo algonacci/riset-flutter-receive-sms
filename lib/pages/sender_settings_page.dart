@@ -23,6 +23,7 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
   final TextEditingController _controller = TextEditingController();
   final TextEditingController _urlController = TextEditingController();
   final TextEditingController _gatewayController = TextEditingController();
+  final TextEditingController _apiKeyController = TextEditingController();
   List<AllowedSender> _senders = [];
   String? _error;
 
@@ -37,6 +38,7 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
     _controller.dispose();
     _urlController.dispose();
     _gatewayController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -44,11 +46,13 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
     final senders = await widget.store.getAllowedSenders();
     final url = await widget.store.getSetting('backend_url');
     final gatewayId = await widget.store.getSetting('gateway_id');
+    final apiKey = await widget.store.getSetting('api_key');
     if (!mounted) return;
     setState(() {
       _senders = senders;
       _urlController.text = url ?? '';
       _gatewayController.text = gatewayId ?? '';
+      _apiKeyController.text = apiKey ?? '';
     });
   }
 
@@ -108,6 +112,10 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
       'gateway_id',
       _gatewayController.text.trim(),
     );
+    await widget.store.setSetting(
+      'api_key',
+      _apiKeyController.text.trim(),
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Pengaturan backend disimpan')),
@@ -116,7 +124,10 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
 
   Future<void> _testConnection() async {
     final url = _urlController.text.trim();
-    final ok = await widget.forward.testConnection(url);
+    final ok = await widget.forward.testConnection(
+      url,
+      apiKey: _apiKeyController.text.trim(),
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -159,6 +170,18 @@ class _SenderSettingsPageState extends State<SenderSettingsPage> {
             decoration: const InputDecoration(
               labelText: 'Gateway ID (opsional)',
               hintText: 'hp-01',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _apiKeyController,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'API key (opsional)',
+              hintText: 'isi kalo backend pakai SMS_API_KEY',
               border: OutlineInputBorder(),
             ),
           ),

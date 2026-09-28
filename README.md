@@ -51,8 +51,9 @@ Catatan jaringan:
   **listen**, bukan tujuan. Di app **jangan** isi `0.0.0.0` (HP akan nembak ke
   HP-nya sendiri), isi IP laptop. Guard otomatis nolak input `0.0.0.0`
 - CORS tidak berpengaruh buat Flutter mobile (cuma browser yang enforce)
-- Kalau backend di Wi-Fi publik, set env `SMS_API_KEY` lalu isi `X-Api-Key` —
-  sekarang app belum ngirim header itu, jadi pakai LAN pribadi dulu
+- **API key**: set env `SMS_API_KEY` di backend, lalu isi **API key** yang sama
+  di Pengaturan app — request otomatis bawa header `X-Api-Key`, backend nolak
+  kalau salah/kosong (401). Kosongkan lagi di app kalo backend nggak pakai key
 
 ## Menyimpan
 

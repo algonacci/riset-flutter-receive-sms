@@ -59,6 +59,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
   bool _forwarding = false;
   String _backendUrl = '';
   String _gatewayId = '';
+  String _apiKey = '';
   int _pendingCount = 0;
   List<AllowedSender> _allowedSenders = [];
   SenderAllowlist _allowlist = const SenderAllowlist([]);
@@ -131,10 +132,12 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     if (!_storeReady) return;
     final url = await _store.getSetting('backend_url');
     final gatewayId = await _store.getSetting('gateway_id');
+    final apiKey = await _store.getSetting('api_key');
     if (!mounted) return;
     setState(() {
       _backendUrl = url ?? '';
       _gatewayId = gatewayId ?? '';
+      _apiKey = apiKey ?? '';
     });
   }
 
@@ -193,6 +196,7 @@ class _SmsInboxPageState extends State<SmsInboxPage>
           baseUrl: _backendUrl,
           entry: entry,
           gatewayId: _gatewayId,
+          apiKey: _apiKey,
         );
         if (outcome == ForwardOutcome.saved) {
           await _store.markForwarded(entry.id!);
@@ -278,19 +282,23 @@ class _SmsInboxPageState extends State<SmsInboxPage>
     if (!mounted) return;
     setState(() => _messages = _messages.where((m) => m.id != id).toList());
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          entry.address.isEmpty
-              ? 'SMS dihapus'
-              : 'SMS dari ${entry.address} dihapus',
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          persist: false,
+          duration: const Duration(seconds: 4),
+          content: Text(
+            entry.address.isEmpty
+                ? 'SMS dihapus'
+                : 'SMS dari ${entry.address} dihapus',
+          ),
+          action: SnackBarAction(
+            label: 'Urungkan',
+            onPressed: () => _restoreEntry(entry),
+          ),
         ),
-        action: SnackBarAction(
-          label: 'Urungkan',
-          onPressed: () => _restoreEntry(entry),
-        ),
-      ),
-    );
+      );
   }
 
   Future<void> _restoreEntry(SmsEntry entry) async {

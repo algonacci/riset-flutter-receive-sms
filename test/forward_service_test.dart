@@ -49,6 +49,25 @@ void main() {
       );
     });
 
+    test('X-Api-Key dikirim kalau diisi, tidak dikirim kalau kosong', () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response('{"status":"ok","saved":1}', 201);
+      });
+      final service = ForwardService(client: client);
+
+      await service.forward(
+        baseUrl: 'http://x:5000',
+        entry: entry(),
+        apiKey: 'rahasia-123',
+      );
+      expect(captured!.headers['x-api-key'], 'rahasia-123');
+
+      await service.forward(baseUrl: 'http://x:5000', entry: entry());
+      expect(captured!.headers.containsKey('x-api-key'), isFalse);
+    });
+
     test('400 -> rejected (data tak valid, jangan blok antrian)', () async {
       final client = MockClient(
         (_) async => http.Response('{"errors":["x"]}', 400),
@@ -132,6 +151,22 @@ void main() {
       );
       expect(await noCall.testConnection('http://0.0.0.0:5000'), isFalse);
       expect(called, isFalse);
+    });
+
+    test('health ikut bawa X-Api-Key kalo diisi', () async {
+      http.Request? captured;
+      final service = ForwardService(
+        client: MockClient((request) async {
+          captured = request;
+          return http.Response('{"status":"ok"}', 200);
+        }),
+      );
+
+      expect(
+        await service.testConnection('http://x:5000', apiKey: 'kunci'),
+        isTrue,
+      );
+      expect(captured!.headers['x-api-key'], 'kunci');
     });
   });
 }
